@@ -8,10 +8,10 @@ SHOW_STEREOMATCHING_DISPARITY_IMG           = True
 STEREOMATCHING_SGBM_MIN_DISPARITY           = 0
     # normally, it's 0 but sometimes rectification algo can shift images, so this param needs to be adjusted accordingly
 # 最小视差值。通常设置为0，但有时校正算法可能会移动图像，因此需要相应调整此参数。
-STEREOMATCHING_SGBM_N_DISPARITIES			= 160#1024
+STEREOMATCHING_SGBM_N_DISPARITIES			= 512#1024
     # in the current implementation, this param must be divisible by 16
 # 视差搜索范围，必须是16的倍数。这个参数决定了算法搜索匹配块的最大视差值。
-STEREOMATCHING_SGBM_MATCHING_WIN_SIZE		= 18
+STEREOMATCHING_SGBM_MATCHING_WIN_SIZE		= 19
     # it must be an odd number >= 1. Normally, it should be somewhere in the 3..11 range
 # 匹配窗口大小，必须是大于等于1的奇数。通常在3到11范围内选择一个值。
 STEREOMATCHING_SGBM_DISPARITY_SMOOTH_P1		= 0		# Thuy check: max 19								# FIXED PARAM
@@ -52,7 +52,7 @@ STEREOMATCHING_SGBM_MODE					= cv2.STEREO_SGBM_MODE_SGBM_3WAY
 
 STEREOMATCHING_PLY_FILTER_RANGE_Z_FROM		= 0
 STEREOMATCHING_PLY_FILTER_RANGE_Z_TO		= 30
-STEREOMATCHING_PLY_FILTER_RANGE_XY			= 5000														# FIXED PARAM
+STEREOMATCHING_PLY_FILTER_RANGE_XY			= 5000												# FIXED PARAM
 STEREOMATCHING_PLY_FILTER_BLACK_COLOR_THR	= 30
 
 
@@ -170,26 +170,21 @@ def StereoMatchingWithCalibFiles(leftImg, rightImg, leftCalibFilename, rightCali
 
     # stereo matching
     disparityImg = StereoMatching(leftImgRectifiedGray, rightImgRectifiedGray)
-    cv2.imwrite("leftImgRectified.png", leftImgRectified)
-    cv2.imwrite("rightImgRectified.png", rightImgRectified)
+    cv2.imwrite("leftImgRectified.bmp", leftImgRectified)
+    cv2.imwrite("rightImgRectified.bmp", rightImgRectified)
     return disparityImg, leftImgRectified, leftQ;
 
 
-def CheckPlyFileExportCondition(disparityX, disparityY, disparityZ, pixelB, pixelG, pixelR):
+def CheckPlyFileExportCondition(disparityX, disparityY, disparityZ):
     # position conditions
     condPosX = (-STEREOMATCHING_PLY_FILTER_RANGE_XY < disparityX and disparityX < STEREOMATCHING_PLY_FILTER_RANGE_XY)
     condPosY = (-STEREOMATCHING_PLY_FILTER_RANGE_XY < disparityY and disparityY < STEREOMATCHING_PLY_FILTER_RANGE_XY)
     condPosZ = (STEREOMATCHING_PLY_FILTER_RANGE_Z_FROM<disparityZ and disparityZ<STEREOMATCHING_PLY_FILTER_RANGE_Z_TO)
 
-    # color condition
-    condColorB = (STEREOMATCHING_PLY_FILTER_BLACK_COLOR_THR < pixelB)
-    condColorG = (STEREOMATCHING_PLY_FILTER_BLACK_COLOR_THR < pixelG)
-    condColorR = (STEREOMATCHING_PLY_FILTER_BLACK_COLOR_THR < pixelR)
-
-    return (condPosX and condPosY and condPosZ and condColorB and condColorG and condColorR);
+    return (condPosX and condPosY and condPosZ );
 
 
-def SaveWorldImageToPLY(worldImg, leftImg, plyFilename):
+def SaveWorldImageToPLY(worldImg, plyFilename):
     worldImgHeight, worldImgWidth = worldImg.shape[:2]
 
     with open(plyFilename, 'w') as f: # write to a new file (NOT APPEND)
@@ -203,10 +198,8 @@ def SaveWorldImageToPLY(worldImg, leftImg, plyFilename):
                 disparityX = worldImg.item(i, j, 0) # to access all B,G,R values --> call .item() separately for all
                 disparityY = worldImg.item(i, j, 1) # http://docs.opencv.org/3.2.0/d3/df2/tutorial_py_basic_ops.html
                 disparityZ = worldImg.item(i, j, 2)
-                pixelB = leftImg.item(i, j, 0)
-                pixelG = leftImg.item(i, j, 1)
-                pixelR = leftImg.item(i, j, 2)
-                if CheckPlyFileExportCondition(disparityX, disparityY, disparityZ, pixelB, pixelG, pixelR):
+
+                if CheckPlyFileExportCondition(disparityX, disparityY, disparityZ):
                     count = count + 1
         f.write('element vertex ' + str(count) + '\n')
 
@@ -214,9 +207,6 @@ def SaveWorldImageToPLY(worldImg, leftImg, plyFilename):
         f.write('property float x\n')
         f.write('property float y\n')
         f.write('property float z\n')
-        f.write('property uchar red\n')
-        f.write('property uchar green\n')
-        f.write('property uchar blue\n')
         f.write('end_header\n')
 
         # write points
@@ -225,19 +215,16 @@ def SaveWorldImageToPLY(worldImg, leftImg, plyFilename):
                 disparityX = worldImg.item(i, j, 0)  # to access all B,G,R values --> call .item() separately for all
                 disparityY = worldImg.item(i, j, 1)  # http://docs.opencv.org/3.2.0/d3/df2/tutorial_py_basic_ops.html
                 disparityZ = worldImg.item(i, j, 2)
-                pixelB = leftImg.item(i, j, 0)
-                pixelG = leftImg.item(i, j, 1)
-                pixelR = leftImg.item(i, j, 2)
+
                 # CheckPlyFileExportCondition函数通过结合位置和颜色的条件，为导出到PLY文件的点提供了一个基本的筛选机制。这对于3D重建和视觉呈现等应用来说是很有用的，因为它可以提高生成的3D模型的质量和可用性。
-                if CheckPlyFileExportCondition(disparityX, disparityY, disparityZ, pixelB, pixelG, pixelR):
-                    f.write(format(disparityX,'.4f') + ' ' + format(disparityY,'.4f') + ' ' + format(disparityZ,'.4f') \
-                            + ' ' + str(pixelR) + ' ' + str(pixelG) + ' ' + str(pixelB) + '\n')
+                if CheckPlyFileExportCondition(disparityX, disparityY, disparityZ):
+                    f.write(format(disparityX,'.4f') + ' ' + format(disparityY,'.4f') + ' ' + format(disparityZ,'.4f')  + '\n')
     return;
 
 
-def SaveDisparityImageToPLY(disparityImg, leftImg, perspectiveMatrix, plyFilename):
+def SaveDisparityImageToPLY(disparityImg, perspectiveMatrix, plyFilename):
     worldImg = cv2.reprojectImageTo3D(disparity=disparityImg, Q=perspectiveMatrix, handleMissingValues=True)
-    SaveWorldImageToPLY(worldImg, leftImg, plyFilename)
+    SaveWorldImageToPLY(worldImg, plyFilename)
     return;
 
 
@@ -251,18 +238,18 @@ def SaveDisparityImageToPLY(disparityImg, leftImg, perspectiveMatrix, plyFilenam
 # rightImg = cv2.imread('testdata01_withCalibration/0002_A02.jpeg')
 # leftImg = cv2.imread('img2.bmp')
 # rightImg = cv2.imread('img1.bmp')
-leftImg = cv2.imread('testdata03_withCalibration/testleft.png')
-rightImg = cv2.imread('testdata03_withCalibration/testright.png')
+leftImg = cv2.imread('testHkvs/testleft.bmp')
+rightImg = cv2.imread('testHkvs/testright.bmp')
 
 start = time.time()
-disparityImg, leftImgRectified, perspectiveMatrix = StereoMatchingWithCalibFiles(leftImg, rightImg, 'testdata03_withCalibration/zed_l.txt', 'testdata03_withCalibration/zed_r.txt')
+disparityImg, leftImgRectified, perspectiveMatrix = StereoMatchingWithCalibFiles(leftImg, rightImg, 'testHkvs/hkvs_l.txt', 'testHkvs/hkvs_r.txt')
 print(time.time() - start)
 
 if SHOW_STEREOMATCHING_DISPARITY_IMG:
     ShowDisparityImageSGBM(disparityImg)
 
 start = time.time()
-SaveDisparityImageToPLY(disparityImg, leftImgRectified, perspectiveMatrix, 'test2.ply')
+SaveDisparityImageToPLY(disparityImg,  perspectiveMatrix, 'test2.ply')
 print("test2.ply 已生成")
 print(time.time() - start)
 
